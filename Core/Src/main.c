@@ -22,6 +22,18 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include"stdio.h"
+#include"string.h"
+
+
+#define ITM_PORT 0
+uint8_t indix=0;
+int _write(int file, char *ptr, int len) {
+    for (int i = 0; i < len; i++) {
+        ITM_SendChar(ptr[i]);
+    }
+    return len;
+}
 
 /* USER CODE END Includes */
 
@@ -47,6 +59,7 @@ PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 osThreadId defaultTaskHandle;
 osThreadId myTask02Handle;
+osThreadId myTask03Handle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -65,7 +78,7 @@ void Task02_init(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void Task03_init(void const *argument);
 /* USER CODE END 0 */
 
 /**
@@ -100,6 +113,9 @@ int main(void)
   MX_LPUART1_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
   /* USER CODE BEGIN 2 */
+  printf("[%lu ms] Hello, world!\r\n", HAL_GetTick());
+ // HAL_UART_Transmit(&hlpuart1,(uint8_t *)"\n starting...\n",strlen("\n starting...\n"),HAL_MAX_DELAY);
+
 
   /* USER CODE END 2 */
 
@@ -129,6 +145,8 @@ int main(void)
   myTask02Handle = osThreadCreate(osThread(myTask02), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  osThreadDef(myTask03, Task03_init, osPriorityAboveNormal, 0, 128);
+    myTask03Handle = osThreadCreate(osThread(myTask03), NULL);
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -144,6 +162,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 
 
   }
@@ -359,8 +378,9 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
+	  printf("[%lu ms]RED LED TOGGLING...!\r\n",HAL_GetTick());
 	  HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-    osDelay(100);
+    osDelay(1000);
   }
   /* USER CODE END 5 */
 }
@@ -378,9 +398,25 @@ void Task02_init(void const * argument)
   /* Infinite loop */
   for(;;)
   {
+	  printf("[%lu ms]BLUE LED TOGGLING...!\r\n",HAL_GetTick());
 	  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
 
-    osDelay(100);
+    osDelay(1000);
+  }
+  /* USER CODE END Task02_init */
+}
+void Task03_init(void const * argument)
+{
+
+  while(1)
+  {
+	  printf("[%lu ms]indix= %d\r\n",HAL_GetTick(),indix++);
+
+    osDelay(1000);
+    if(indix==4){
+    	printf("[%lu ms]BLUE LED STOP TOGGLING",HAL_GetTick());
+        osThreadTerminate (myTask02Handle);
+    }
   }
   /* USER CODE END Task02_init */
 }
@@ -398,6 +434,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 
   /* USER CODE END Callback 0 */
+
   if (htim->Instance == TIM1)
   {
     HAL_IncTick();
