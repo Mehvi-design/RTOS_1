@@ -414,9 +414,16 @@ void Task03_init(void const * argument)
 
     osDelay(1000);
     if(indix==4){
-    	printf("[%lu ms]BLUE LED STOP TOGGLING",HAL_GetTick());
-        osThreadTerminate (myTask02Handle);
+    	printf("[%lu ms]BLUE LED STOP TOGGLING\r\n",HAL_GetTick());
+    	printf("[%lu ms]RED LED SUSPENDEDG\r\n",HAL_GetTick());
+        osThreadTerminate (myTask02Handle);//terminates completely
+        osThreadSuspend(defaultTaskHandle);
     }
+    if(indix==7){
+        	printf("[%lu ms]RED LED STARTED\r\n",HAL_GetTick());
+
+            osThreadResume(defaultTaskHandle);
+        }
   }
   /* USER CODE END Task02_init */
 }
