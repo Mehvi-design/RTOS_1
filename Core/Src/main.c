@@ -24,16 +24,62 @@
 /* USER CODE BEGIN Includes */
 #include"stdio.h"
 #include"string.h"
+#include <math.h>
+#include<stdbool.h>
 
 
 #define ITM_PORT 0
 uint8_t indix=0;
+uint16_t ADC_Val;
+float voltage=0;
+float Angle=0;
+char msg[64];
+
 int _write(int file, char *ptr, int len) {
     for (int i = 0; i < len; i++) {
         ITM_SendChar(ptr[i]);
     }
     return len;
 }
+void float_to_string_manual(float value, char* buffer, int precision) {
+    if (value < 0) {
+        *buffer++ = '-';
+        value = -value;
+    }
+
+    int int_part = (int)value;
+    int frac_part = (int)((value - int_part) * pow(10, precision));
+
+    // Convert integer part
+    char int_str[12];
+    int i = 0;
+    if (int_part == 0) {
+        int_str[i++] = '0';
+    } else {
+        while (int_part > 0) {
+            int_str[i++] = (int_part % 10) + '0';
+            int_part /= 10;
+        }
+    }
+
+    // Reverse integer part
+    for (int j = i - 1; j >= 0; j--) {
+        *buffer++ = int_str[j];
+    }
+
+    *buffer++ = '.';
+
+    // Convert fractional part
+    for (int j = precision - 1; j >= 0; j--) {
+        buffer[j] = (frac_part % 10) + '0';
+        frac_part /= 10;
+    }
+
+    buffer += precision;
+    *buffer = '\0';
+}
+
+
 
 /* USER CODE END Includes */
 
@@ -53,24 +99,29 @@ int _write(int file, char *ptr, int len) {
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 UART_HandleTypeDef hlpuart1;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 osThreadId defaultTaskHandle;
 osThreadId myTask02Handle;
-osThreadId myTask03Handle;
+osThreadId myTask04Handle;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
+void PeriphCommonClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_LPUART1_UART_Init(void);
 static void MX_USB_OTG_FS_PCD_Init(void);
+static void MX_ADC1_Init(void);
 void StartDefaultTask(void const * argument);
 void Task02_init(void const * argument);
+void StartTask04(void const * argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -78,7 +129,7 @@ void Task02_init(void const * argument);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void Task03_init(void const *argument);
+
 /* USER CODE END 0 */
 
 /**
@@ -104,6 +155,9 @@ int main(void)
   /* Configure the system clock */
   SystemClock_Config();
 
+  /* Configure the peripherals common clocks */
+  PeriphCommonClock_Config();
+
   /* USER CODE BEGIN SysInit */
 
   /* USER CODE END SysInit */
@@ -112,9 +166,14 @@ int main(void)
   MX_GPIO_Init();
   MX_LPUART1_UART_Init();
   MX_USB_OTG_FS_PCD_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  printf("[%lu ms] Hello, world!\r\n", HAL_GetTick());
- // HAL_UART_Transmit(&hlpuart1,(uint8_t *)"\n starting...\n",strlen("\n starting...\n"),HAL_MAX_DELAY);
+//+ printf("[%lu ms] Hello, world!\r\n", HAL_GetTick());
+
+  //sprintf(msg, "[%lu ms] Hello, world!\r\n", HAL_GetTick());
+  //HAL_UART_Transmit(&hlpuart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+
+ HAL_UART_Transmit(&hlpuart1,(uint8_t *)"\n starting...\r\n",strlen("\n starting...\n"),HAL_MAX_DELAY);
 
 
   /* USER CODE END 2 */
@@ -144,9 +203,12 @@ int main(void)
   osThreadDef(myTask02, Task02_init, osPriorityNormal, 0, 128);
   myTask02Handle = osThreadCreate(osThread(myTask02), NULL);
 
+  /* definition and creation of myTask04 */
+  osThreadDef(myTask04, StartTask04, osPriorityAboveNormal, 0, 128);
+  myTask04Handle = osThreadCreate(osThread(myTask04), NULL);
+
   /* USER CODE BEGIN RTOS_THREADS */
-  osThreadDef(myTask03, Task03_init, osPriorityAboveNormal, 0, 128);
-    myTask03Handle = osThreadCreate(osThread(myTask03), NULL);
+
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -227,6 +289,99 @@ void SystemClock_Config(void)
   /** Enable MSI Auto calibration
   */
   HAL_RCCEx_EnableMSIPLLMode();
+}
+
+/**
+  * @brief Peripherals Common Clock Configuration
+  * @retval None
+  */
+void PeriphCommonClock_Config(void)
+{
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+  /** Initializes the peripherals clock
+  */
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_ADC;
+  PeriphClkInit.AdcClockSelection = RCC_ADCCLKSOURCE_PLLSAI1;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLLSAI1;
+  PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
+  PeriphClkInit.PLLSAI1.PLLSAI1M = 1;
+  PeriphClkInit.PLLSAI1.PLLSAI1N = 24;
+  PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV2;
+  PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV2;
+  PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
+  PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_48M2CLK|RCC_PLLSAI1_ADC1CLK;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -330,12 +485,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PA3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_3;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
   /*Configure GPIO pins : LD3_Pin LD2_Pin */
   GPIO_InitStruct.Pin = LD3_Pin|LD2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -378,9 +527,12 @@ void StartDefaultTask(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  printf("[%lu ms]RED LED TOGGLING...!\r\n",HAL_GetTick());
+	 // sprintf(msg, "[%lu ms] Hello, world!\r\n", HAL_GetTick());
+	  //  HAL_UART_Transmit(&hlpuart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+	 HAL_UART_Transmit(&hlpuart1,(uint8_t *)"RED LED TOGGLING...\r\n",strlen("RED LED TOGGLING...\r\n"),HAL_MAX_DELAY);
+	 // printf("[%lu ms]RED LED TOGGLING...!\r\n",HAL_GetTick());
 	  HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
-    osDelay(1000);
+    osDelay(100);
   }
   /* USER CODE END 5 */
 }
@@ -398,34 +550,90 @@ void Task02_init(void const * argument)
   /* Infinite loop */
   for(;;)
   {
-	  printf("[%lu ms]BLUE LED TOGGLING...!\r\n",HAL_GetTick());
-	  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+	  //sprintf(msg, "[%lu ms] Hello, world!\r\n", HAL_GetTick());
+	  //  HAL_UART_Transmit(&hlpuart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+	 HAL_UART_Transmit(&hlpuart1,(uint8_t *)"BLUE LED TOGGLING...\r\n",strlen("BLUE LED TOGGLING...\r\n"),HAL_MAX_DELAY);
+	// printf("[%lu ms]BLUE LED TOGGLING...!\r\n",HAL_GetTick());
 
-    osDelay(1000);
+	  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);
+    osDelay(100);
   }
   /* USER CODE END Task02_init */
 }
-void Task03_init(void const * argument)
+
+/* USER CODE BEGIN Header_StartTask04 */
+/**
+* @brief Function implementing the myTask04 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask04 */
+void StartTask04(void const * argument)
 {
-
-  while(1)
+  /* USER CODE BEGIN StartTask04 */
+  /* Infinite loop */
+	bool is_defaultTaskSuspended = false;
+	bool is_myTask02Suspended = false;
+	float prev_voltage = 0.0f;
+  for(;;)
   {
-	  printf("[%lu ms]indix= %d\r\n",HAL_GetTick(),indix++);
+	  HAL_ADC_Start(&hadc1);
+	  HAL_ADC_PollForConversion(&hadc1,10);
+	  ADC_Val=HAL_ADC_GetValue(&hadc1);
 
-    osDelay(1000);
-    if(indix==4){
-    	printf("[%lu ms]BLUE LED STOP TOGGLING\r\n",HAL_GetTick());
-    	printf("[%lu ms]RED LED SUSPENDEDG\r\n",HAL_GetTick());
-        osThreadTerminate (myTask02Handle);//terminates completely
-        osThreadSuspend(defaultTaskHandle);
-    }
-    if(indix==7){
-        	printf("[%lu ms]RED LED STARTED\r\n",HAL_GetTick());
+	  HAL_ADC_Stop(&hadc1);
 
-            osThreadResume(defaultTaskHandle);
-        }
+	  voltage=(ADC_Val*3.3)/4095;
+	  Angle=(voltage*100)/3.3;
+	  if (fabs(prev_voltage - voltage) > 0.01f){
+	      if (!is_defaultTaskSuspended) {
+	          osThreadSuspend(defaultTaskHandle);
+	          is_defaultTaskSuspended = true;
+	      }
+
+	      if (!is_myTask02Suspended) {
+	          osThreadSuspend(myTask02Handle);
+	          is_myTask02Suspended = true;
+	      }
+
+	     // printf("[%lu ms]ADC VOLTAGE!= %.2f \r\n", HAL_GetTick(), voltage);
+	      char msg[30];
+	      char voltage_str[16];
+
+	      float_to_string_manual(voltage, voltage_str, 2);
+
+	      strcpy(msg, "Voltage = ");
+	      strcat(msg, voltage_str);
+	      strcat(msg, " V\r\n");
+
+	      HAL_UART_Transmit(&hlpuart1, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
+
+	  } else {
+	      if (is_defaultTaskSuspended) {
+	          osThreadResume(defaultTaskHandle);
+	          is_defaultTaskSuspended = false;
+	      }
+
+	      if (is_myTask02Suspended) {
+	          osThreadResume(myTask02Handle);
+	          is_myTask02Suspended = false;
+	      }
+
+	  }
+
+//		    sprintf(msg, "[%lu ms] Hello, world!\r\n", HAL_GetTick());
+//		    HAL_UART_Transmit(&hlpuart1, (uint8_t *)msg, strlen(msg), HAL_MAX_DELAY);
+//		    char buf[32];
+//		    sprintf(buf, "Voltage: %.2f V\r\n", voltage);
+//		    HAL_UART_Transmit(&hlpuart1, (uint8_t *)buf, strlen(buf), HAL_MAX_DELAY);
+
+
+		//  HAL_UART_Transmit(&hlpuart1,(uint8_t *)"\r\n",strlen("\r\n"),HAL_MAX_DELAY);
+
+	  prev_voltage = voltage;
+	  osDelay(200);
   }
-  /* USER CODE END Task02_init */
+  /* USER CODE END StartTask04 */
 }
 
 /**
@@ -441,7 +649,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* USER CODE BEGIN Callback 0 */
 
   /* USER CODE END Callback 0 */
-
   if (htim->Instance == TIM1)
   {
     HAL_IncTick();
